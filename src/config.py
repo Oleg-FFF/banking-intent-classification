@@ -5,6 +5,9 @@ RANDOM_STATE = 42
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 
+METRICS_DIR = PROJECT_ROOT / "reports" / "metrics"
+MODEL_RESULTS_PATH = METRICS_DIR / "model_results.csv"
+
 DATA_DIR = PROJECT_ROOT / "data"
 PROCESSED_DATA_DIR = DATA_DIR / "processed"
 MODELS_DIR = PROJECT_ROOT / "models"
