@@ -22,3 +22,7 @@ SVM_MODEL_PATH = MODELS_DIR / "svm_pipeline.joblib"
 TEXT_COLUMN = "text_clean"
 TARGET_COLUMN = "label"
 TARGET_NAME_COLUMN = "label_text"
+
+DISTILBERT_MODEL_ID = (
+    "foleg/banking-distilbert-intent-classifier"
+)
