@@ -3,12 +3,9 @@ import sys
 from pathlib import Path
 from typing import Any
 
+import joblib
+import numpy as np
 import streamlit as st
-import torch
-from transformers import (
-    AutoModelForSequenceClassification,
-    AutoTokenizer,
-)
 
 
 APP_DIR = Path(__file__).resolve().parent
@@ -17,21 +14,14 @@ PROJECT_ROOT = APP_DIR.parent
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-from src.config import DISTILBERT_MODEL_ID
+from src.config import SVM_DEPLOYMENT_MODEL_PATH
 
 
-BACKGROUND_PATH = (
-    APP_DIR
-    / "assets"
-    / "banking_intent_background.png"
-)
-
-MAX_LENGTH = 128
+BACKGROUND_PATH = APP_DIR / "assets" / "banking_intent_background.png"
 
 
-def set_background_image(
-    image_path: Path,
-) -> None:
+def set_background_image(image_path: Path) -> None:
+    """Set the Streamlit page background image."""
     if not image_path.exists():
         return
 
@@ -48,9 +38,7 @@ def set_background_image(
                     rgba(2, 12, 27, 0.72),
                     rgba(2, 12, 27, 0.82)
                 ),
-                url(
-                    "data:image/png;base64,{encoded_image}"
-                );
+                url("data:image/png;base64,{encoded_image}");
             background-size: cover;
             background-position: center;
             background-repeat: no-repeat;
@@ -62,22 +50,12 @@ def set_background_image(
         }}
 
         [data-testid="stSidebar"] {{
-            background-color: rgba(
-                5,
-                20,
-                42,
-                0.88
-            );
+            background-color: rgba(5, 20, 42, 0.88);
             backdrop-filter: blur(12px);
         }}
 
         [data-testid="stMainBlockContainer"] {{
-            background-color: rgba(
-                7,
-                26,
-                52,
-                0.76
-            );
+            background-color: rgba(7, 26, 52, 0.76);
             backdrop-filter: blur(14px);
             border-radius: 18px;
             padding: 2rem 2.5rem;
@@ -101,6 +79,98 @@ def set_background_image(
     )
 
 
+@st.cache_resource(show_spinner="Loading calibrated Linear SVM model...")
+def load_resources():
+    """Load the deployment pipeline and label mapping."""
+    model_path = Path(SVM_DEPLOYMENT_MODEL_PATH)
+
+    if not model_path.exists():
+        raise FileNotFoundError(
+            "Deployment model was not found: "
+            f"{model_path}"
+        )
+
+    deployment = joblib.load(model_path)
+
+    if "pipeline" not in deployment:
+        raise KeyError(
+            "The deployment bundle does not contain "
+            "the 'pipeline' key."
+        )
+
+    if "label_mapping" not in deployment:
+        raise KeyError(
+            "The deployment bundle does not contain "
+            "the 'label_mapping' key."
+        )
+
+    model = deployment["pipeline"]
+    label_mapping = {
+        int(label): intent
+        for label, intent in deployment["label_mapping"].items()
+    }
+
+    if not hasattr(model, "predict_proba"):
+        raise AttributeError(
+            "The loaded model does not support predict_proba(). "
+            "Train and save the pipeline with "
+            "CalibratedClassifierCV."
+        )
+
+    return model, label_mapping
+
+
+def predict_top_k(
+    text: str,
+    model: Any,
+    label_mapping: dict[int, str],
+    top_k: int = 3,
+) -> dict[str, Any]:
+    """Predict the most likely banking intents."""
+    clean_text = text.strip()
+
+    if not clean_text:
+        raise ValueError(
+            "Customer message must not be empty."
+        )
+
+    probabilities = model.predict_proba([clean_text])[0]
+    classes = model.classes_
+    top_k = min(top_k, len(classes))
+
+    top_indices = np.argsort(probabilities)[-top_k:][::-1]
+
+    predictions = []
+
+    for index in top_indices:
+        label = int(classes[index])
+
+        predictions.append(
+            {
+                "label": label,
+                "intent": label_mapping.get(
+                    label,
+                    f"unknown_intent_{label}",
+                ),
+                "probability": float(probabilities[index]),
+            }
+        )
+
+    best_prediction = predictions[0]
+
+    return {
+        "label": best_prediction["label"],
+        "intent": best_prediction["intent"],
+        "confidence": best_prediction["probability"],
+        "top_predictions": predictions,
+    }
+
+
+def format_intent(intent: str) -> str:
+    """Convert a raw intent label into a readable title."""
+    return intent.replace("_", " ").title()
+
+
 st.set_page_config(
     page_title="Banking Intent Classifier",
     page_icon="🏦",
@@ -109,121 +179,47 @@ st.set_page_config(
 
 set_background_image(BACKGROUND_PATH)
 
-
-def get_device() -> torch.device:
-    if torch.cuda.is_available():
-        return torch.device("cuda")
-
-    if torch.backends.mps.is_available():
-        return torch.device("mps")
-
-    return torch.device("cpu")
-
-
-@st.cache_resource(show_spinner="Loading model from Hugging Face...")
-def load_model():
-    tokenizer = AutoTokenizer.from_pretrained(
-        DISTILBERT_MODEL_ID
-    )
-
-    model = AutoModelForSequenceClassification.from_pretrained(
-        DISTILBERT_MODEL_ID
-    )
-
-    device = get_device()
-
-    model.to(device)
-    model.eval()
-
-    return tokenizer, model, device
-
-
-def predict_top_k(
-    text: str,
-    tokenizer,
-    model,
-    device: torch.device,
-    top_k: int = 3,
-) -> dict[str, Any]:
-    clean_text = text.strip()
-
-    if not clean_text:
-        raise ValueError("Customer message must not be empty.")
-
-    inputs = tokenizer(
-        clean_text,
-        return_tensors="pt",
-        truncation=True,
-        max_length=MAX_LENGTH,
-    )
-
-    inputs = {
-        key: value.to(device)
-        for key, value in inputs.items()
-    }
-
-    with torch.inference_mode():
-        logits = model(**inputs).logits
-        probabilities = torch.softmax(logits, dim=-1)[0]
-
-    top_k = min(top_k, model.config.num_labels)
-
-    top_probabilities, top_indices = torch.topk(
-        probabilities,
-        k=top_k,
-    )
-
-    predictions = []
-
-    for probability, label_id in zip(
-        top_probabilities,
-        top_indices,
-    ):
-        numeric_label = int(label_id.item())
-
-        predictions.append(
-            {
-                "label": numeric_label,
-                "intent": model.config.id2label[numeric_label],
-                "probability": float(probability.item()),
-            }
-        )
-
-    return {
-        "intent": predictions[0]["intent"],
-        "confidence": predictions[0]["probability"],
-        "top_predictions": predictions,
-    }
-
-
-def format_intent(intent: str) -> str:
-    return intent.replace("_", " ").title()
-
 st.title("🏦 Banking Intent Classifier")
 
 st.write(
     "Classify a customer support message into one of "
-    "77 banking intents using a fine-tuned DistilBERT model."
+    "77 banking intents using a TF-IDF and calibrated "
+    "Linear SVM model."
 )
 
 with st.sidebar:
     st.header("Model information")
-    st.write("**Model:** DistilBERT")
+    st.write("**Model:** TF-IDF + Calibrated Linear SVM")
     st.write("**Dataset:** Banking77")
     st.write("**Classes:** 77")
+    st.write("**Calibration:** Sigmoid")
+    st.write("**Original Linear SVM Test Macro F1:** 0.8879")
+
+    st.divider()
+
+    st.header("Best experimental model")
+    st.write("**Model:** Fine-tuned DistilBERT")
     st.write("**Test Macro F1:** 0.9091")
-    st.write("**Source:** Hugging Face Hub")
+    st.write(
+        "**Hugging Face:** "
+        "`foleg/banking-distilbert-intent-classifier`"
+    )
+
+    st.caption(
+        "The calibrated Linear SVM is used for "
+        "deployment because it requires significantly "
+        "less memory than DistilBERT."
+    )
 
     show_raw_labels = st.checkbox(
         "Show raw intent labels",
         value=False,
     )
 
+
 example_messages = {
     "Custom message": "",
-    "Card has not arrived": (
-        "My card has not arrived yet."
-    ),
+    "Card has not arrived": "My card has not arrived yet.",
     "Cash withdrawal fee": (
         "Why was I charged an extra fee when withdrawing cash?"
     ),
@@ -258,17 +254,15 @@ classify_button = st.button(
 if classify_button:
     if not customer_message.strip():
         st.warning("Enter a customer message first.")
-
     else:
         try:
-            tokenizer, model, device = load_model()
+            model, label_mapping = load_resources()
 
             with st.spinner("Classifying message..."):
                 result = predict_top_k(
                     text=customer_message,
-                    tokenizer=tokenizer,
                     model=model,
-                    device=device,
+                    label_mapping=label_mapping,
                     top_k=3,
                 )
 
@@ -285,7 +279,7 @@ if classify_button:
             )
 
             st.metric(
-                "Confidence",
+                "Predicted probability",
                 f"{result['confidence']:.2%}",
             )
 

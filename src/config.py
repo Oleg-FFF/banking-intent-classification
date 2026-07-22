@@ -18,6 +18,9 @@ TEST_PATH = PROCESSED_DATA_DIR / "test_preprocessed.csv"
 
 LOGISTIC_MODEL_PATH = MODELS_DIR / "logistic_pipeline.joblib"
 SVM_MODEL_PATH = MODELS_DIR / "svm_pipeline.joblib"
+SVM_DEPLOYMENT_MODEL_PATH = (
+    MODELS_DIR / "svm_deployment.joblib"
+)
 
 TEXT_COLUMN = "text_clean"
 TARGET_COLUMN = "label"

@@ -1,6 +1,5 @@
 streamlit>=1.46,<2.0
-torch==2.13.0
-transformers==5.13.1
-huggingface-hub>=0.33
-safetensors>=0.5
-torchvision
+scikit-learn==1.7.1
+numpy
+scipy
+joblib
