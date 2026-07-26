@@ -1,4 +1,4 @@
-# 🏦 Banking Intent Classification
+# Banking Intent Classification
 
 ## 1. Project Overview
 
@@ -6,7 +6,7 @@
 
 The application predicts one of **77 banking intents** from a customer's message and displays the three most probable predictions together with calibrated probabilities.
 
-🌐 **Live Demo:** https://banking-intent-classification.onrender.com/
+**Live Demo:** https://banking-intent-classification.onrender.com/
 
 ---
 
@@ -50,10 +50,10 @@ Each record consists of:
 
 Example:
 
-| Text | Intent |
-|------|---------|
-| My card has not arrived yet | card_arrival |
-| My transfer is still pending | pending_transfer |
+| text                         | label            | label_text    |
+|------------------------------|------------------|---------------|
+| My card has not arrived yet  | card_arrival     |11             |
+| My transfer is still pending | pending_transfer |14             |
 
 ---
 
