@@ -8,6 +8,8 @@ The application predicts one of **77 banking intents** from a customer's message
 
 **Live Demo:** https://banking-intent-classification.onrender.com/
 
+**Video Demo:** https://www.loom.com/share/de13ea019a8b4dc297d039ffa868dcac
+
 ---
 
 # 2. Business Problem and Objective
