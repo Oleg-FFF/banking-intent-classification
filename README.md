@@ -225,8 +225,6 @@ Python 3.11+
 
 ## Author
 
-**Oleh F.**
-
-Master's Degree Project
+**Oleh Furtak**
 
 2026
